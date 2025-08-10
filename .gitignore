@@ -1,0 +1,118 @@
+# .NET Core / .NET Framework
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.docstates
+
+# NuGet packages
+*.nupkg
+packages/
+!packages/build/
+!packages/*/lib/
+!.nuget/packages
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.vsidx
+*.v2
+*.sln.docstates
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio 2015/2017 cache/options directory
+.vs/
+
+# MSTest test Results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# NUnit
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+
+# Publish profiles
+PublishProfiles/
+
+# Azure Web App publish settings
+*.PublishSettings
+
+# Microsoft Azure Web App publish settings.
+*.azurePubxml
+
+# NuGet Packages
+*.nupkg
+*.snupkg
+!**/[Pp]ackages/build/
+!**/packages/repositories.config
+
+# Project-specific output files
+DbPerformanceMcpServer.exe
+DbPerformanceMcpServer.pdb
+Microsoft.Data.SqlClient.SNI.dll
+
+# Performance snapshots (output directory)
+performance_snapshots/
+
+# Configuration files that may contain sensitive data
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Local.json
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Claude Code settings
+.claude/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Mac
+.DS_Store
