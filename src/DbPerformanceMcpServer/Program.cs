@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using DbPerformanceMcpServer.Tools;
 using DbPerformanceMcpServer.Services;
+using DbPerformanceMcpServer.Services.Implementations;
 using DbPerformanceMcpServer.Configuration;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -36,6 +37,7 @@ builder.Services.AddSingleton<IValidationService, ValidationService>();
 builder.Services.AddSingleton<ISnapshotService, SnapshotService>();
 builder.Services.AddSingleton<IExecutionPlanAnalyzer, ExecutionPlanAnalyzer>();
 builder.Services.AddSingleton<IOptimizationOrchestrator, OptimizationOrchestrator>();
+builder.Services.AddSingleton<IConstraintValidator, ConstraintValidator>();
 
 // Add the MCP services: the transport to use (stdio) and the tools to register.
 builder.Services

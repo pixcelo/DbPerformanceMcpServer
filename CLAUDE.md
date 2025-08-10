@@ -78,6 +78,18 @@ MCPツールを使用する前に、`appsettings.json`の接続文字列が正�
 - `DbPerformanceOptimizer.SnapshotBasePath`: パフォーマンススナップショットの出力ディレクトリ
 - `DbPerformanceOptimizer.MaxOptimizationSteps`: セッションあたりの最大最適化ステップ数
 - `DbPerformanceOptimizer.SQL2016Compatible`: SQL Server 2016+との互換性を確保
+- `DbPerformanceOptimizer.Constraints`: 最適化制約設定（詳細は後述）
+
+### 最適化制約システム
+安全な最適化を実現するため、包括的な制約システムを実装：
+
+- **ForbiddenActions**: インデックス作成、CTE追加など設計変更を伴うアクションを禁止
+- **AllowedActions**: 統計更新、DISTINCT削除など安全なアクションのみを許可（ホワイトリスト）
+- **ForbiddenSqlPatterns**: `CREATE INDEX`、`WITH...AS`など危険なSQL構文を正規表現で検出
+- **ForbiddenViewPatterns**: ビュー定義でのCTE、CROSS APPLYなど複雑な構文を制限
+- **パフォーマンス制約**: 最小改善率（5%）、最大実行時間（30秒）などの品質基準
+
+詳細な制約設定については `docs/optimization-constraints.md` を参照してください。
 
 ## ファイル構造
 
@@ -109,13 +121,22 @@ src/DbPerformanceMcpServer/
 
 ## 安全制約
 
-- ❌ インデックスの作成/変更なし
-- ❌ CTEの追加なし 
-- ❌ SQL Server 2017+機能の使用なし
+### 設計変更の防止
+- ❌ インデックスの作成/変更なし（`CreateIndex`, `DropIndex`禁止）
+- ❌ CTEの追加なし（`WITH...AS`構文禁止）
+- ❌ テーブル構造変更なし（`ALTER TABLE`禁止）
 - ❌ 複数最適化の同時実行なし
+
+### 技術制約
+- ❌ SQL Server 2017+機能の使用なし
+- ❌ CROSS APPLY、OUTER APPLY等の複雑な結合なし
+- ❌ パーティショニング関連操作なし
+
+### データ保護
 - ✅ すべての変更にSHA2_256検証が必要
 - ✅ 検証失敗時の自動ロールバック
 - ✅ パフォーマンススナップショットでの完全監査証跡
+- ✅ 最小改善率5%の品質保証
 
 ## 出力構造
 
