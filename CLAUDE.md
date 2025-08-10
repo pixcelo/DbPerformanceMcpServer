@@ -75,38 +75,57 @@ MCPツールを使用する前に、`appsettings.json`でSQL Server接続文字�
 
 ## アーキテクチャ
 
-### サービス層設計
+### 読み取り専用サービス層設計
 アプリケーションは分析・提案専用のクリーンなサービス指向アーキテクチャに従います：
 
-- **IViewAnalysisService**: ベースライン分析とパフォーマンス測定（読み取り専用）
-- **IOptimizationService**: 最適化提案SQL生成（実行はしない）
-- **IOptimizationOrchestrator**: 分析セッション管理と包括的提案生成
+#### 主要サービス
+- **IViewAnalysisService**: ベースライン分析とパフォーマンス測定（完全読み取り専用）
+- **IOptimizationService**: 最適化提案SQL生成と実行ガイド作成（実行はしない）
+- **IOptimizationOrchestrator**: 分析セッション管理と包括的提案生成（新設計）
 - **IValidationService**: SHA2_256チェックサムを使用した結果検証（読み取り専用）
 - **IExecutionPlanAnalyzer**: SQL実行プラン分析と最適化提案
 - **ISqlConnectionService**: データベース接続と読み取り専用クエリ実行
 - **ISnapshotService**: 分析結果とSQL提案のファイル出力管理
 
+#### 新モデル体系
+- **AnalysisSession**: 読み取り専用分析セッション管理
+- **OptimizationProposal**: 実行手順書付き最適化提案
+- **ExecutionGuide**: ステップ別実行手順とチェックリスト
+- **RiskAssessment**: リスク評価と前提条件管理
+- **ExpectedImprovement**: 改善予測効果とインパクト評価
+
 ### 読み取り専用設計の安全性
-- **DDL実行なし**: ALTER VIEW、UPDATE STATISTICS等は提案のみ生成
-- **データ検証**: SHA2_256ハッシュによる結果セット同一性確認
-- **提案品質保証**: 生成されるSQL文の構文・制約チェック
-- **完全監査**: すべての分析過程と提案内容をファイル出力
+- **DDL実行なし**: ALTER VIEW、UPDATE STATISTICS等は提案のみ生成、実行は人間が判断
+- **データ検証**: SHA2_256ハッシュによる結果セット同一性確認（現在値のみ）
+- **提案品質保証**: 生成されるSQL文の構文・制約チェック、リスク評価付き
+- **実行ガイド**: ステップ別手順書、前提条件チェックリスト、回復手順を自動生成
+- **完全監査**: すべての分析過程と提案内容をファイル出力、実行前後の追跡可能
 
 ## MCPツール（分析・提案専用）
 
-ビュー分析と最適化提案のための6つのMCPツールを公開しています：
+### 🔧 新設計のMCPツール
+ビュー分析と最適化提案のための6つの読み取り専用MCPツールを公開しています：
 
-1. **analyze-view-baseline**: ベースライン分析の実行（実行プラン、パフォーマンス、チェックサム）
-2. **generate-optimization-proposal**: 単一最適化提案の生成（SQL生成、実行はしない）
-3. **analyze-and-propose-optimizations**: 包括的分析と最適化提案一覧生成
-4. **generate-final-report**: 包括的な分析レポートと実行可能SQL文の生成
-5. **measure-view-performance**: 現在のビューパフォーマンスの測定
-6. **validate-view-results**: 結果チェックサムの計算/検証
+1. **analyze-view-baseline**: ベースライン分析（実行プラン、パフォーマンス、チェックサム）
+2. **generate-optimization-proposal**: 単一最適化提案生成（実行手順書・リスク評価付き）
+3. **analyze-and-propose-optimizations**: 包括的分析セッション実行（優先度付き提案リスト生成）✨
+4. **generate-final-report**: 統合分析レポートと実行可能SQL文集の生成
+5. **measure-view-performance**: 現在のビューパフォーマンス測定（ベンチマーク用）
+6. **validate-view-results**: 結果チェックサムの計算・検証（整合性確認用）
 
-### 🚨 **重要**: すべてのツールは分析専用
-- DDL文（ALTER VIEW等）は**生成のみ**で実行しません
-- 生成されたSQL文の実行は人間が判断・実行してください
-- 本ツールは提案・検証・測定のみを行います
+#### ✨ 主力ツール: `analyze-and-propose-optimizations`
+新設計の中核ツールで、以下を一括実行：
+- ベースライン分析から優先度付き提案リスト生成まで完全自動化
+- 実行プラン解析に基づく最適化候補の自動選出
+- 各提案の詳細実行手順書・リスク評価・改善予測を生成
+- 完全な分析セッションを1回のツール呼び出しで実現
+
+### 🚨 **重要**: 完全読み取り専用モード
+- **SQL生成**: DDL文（ALTER VIEW等）は生成するが**絶対に実行しない**
+- **人間判断**: すべての生成SQL文の実行可否は開発者・DBAが決定
+- **実行ガイド**: 各提案に実行手順書、チェックリスト、リスク評価を付与
+- **監査証跡**: 提案生成から実行まで完全な記録を残す
+- **制約遵守**: 危険なSQL構文や設計変更を伴う提案を自動的に除外
 
 ## 設定
 
@@ -146,16 +165,32 @@ src/DbPerformanceMcpServer/
 └── Utils/                     # ユーティリティクラス
 ```
 
-## サポートされる最適化アクション
+## サポートされる最適化アクション（提案のみ）
 
-- **UpdateStatistics**: FULLSCANでテーブル統計を更新
-- **RemoveUnnecessaryDistinct**: 冗長なDISTINCT句を削除
-- **ConvertSubqueryToJoin**: サブクエリをより効率的なJOINに変換
-- **FixImplicitConversion**: 暗黙的データ型変換を修正
-- **OptimizeStringConcatenation**: 文字列操作を最適化
-- **PrecomputeCalculatedColumns**: 高コストな計算を事前計算
-- **RemoveUnnecessarySort**: 冗長なORDER BY句を削除
-- **OptimizeStringOperations**: 複雑な操作の代わりにLTRIM/RTRIMを使用
+### 📊 優先度別分類
+
+#### 🟢 高優先度（低リスク・高効果）
+- **UpdateStatistics**: FULLSCANでテーブル統計を更新（改善予測25%）
+- **FixImplicitConversion**: 暗黙的データ型変換を修正（改善予測30%）
+- **RemoveUnnecessaryDistinct**: 冗長なDISTINCT句を削除（改善予測15%）
+
+#### 🟡 中優先度（中リスク・中効果）
+- **ConvertSubqueryToJoin**: サブクエリをより効率的なJOINに変換（改善予測40%）
+- **OptimizeTableScans**: WHERE句改善によるスキャン最適化（改善予測35%）
+- **OptimizeStringConcatenation**: CONCAT関数による文字列操作最適化（改善予測10%）
+- **OptimizeStringOperations**: LTRIM/RTRIMによる文字列処理最適化（改善予測12%）
+
+#### 🟠 低優先度（制約により制限付き）
+- **PrecomputeCalculatedColumns**: 高コスト計算の事前計算（制約により限定的）
+- **RemoveUnnecessarySort**: 冗長なORDER BY句削除（改善予測5%）
+
+### 📈 各アクションの詳細情報
+各提案には以下が自動生成されます：
+- **実行手順書**: ステップ別の詳細手順
+- **リスク評価**: 潜在的リスクと対策
+- **改善予測**: 実行時間・IO改善率の見積もり
+- **前提条件**: 実行前に必要な確認事項
+- **回復手順**: 問題発生時の復旧方法
 
 ## 安全制約
 
@@ -235,21 +270,24 @@ generate-optimization-proposal
 5. 実行手順書の生成
 6. リスク評価とチェックリスト作成
 
-#### Step 3: 包括的分析・提案生成（推奨）
+#### Step 3: 包括的分析・提案生成（推奨）✨
 ```bash
-# 完全な分析と提案一覧を生成
+# 新設計の主力ツール: 完全自動化された分析セッション
 analyze-and-propose-optimizations
   viewIdentifier: "dbo.V_SlowSalesReport"
   maxProposals: 10
   snapshotBasePath: "./performance_snapshots/"
 ```
 
-**自動生成される内容:**
-1. ベースライン分析
-2. 最適化提案の優先度順リスト作成
-3. 各提案SQL文の生成（実行はしない）
-4. 改善予測効果の算出
-5. 実行手順書と最終レポート生成
+**新設計で自動生成される内容:**
+1. **AnalysisSession開始**: 読み取り専用分析セッション管理
+2. **ベースライン分析**: 実行プラン・パフォーマンス・チェックサム取得
+3. **候補選出**: 実行プランに基づく最適化アクションの自動選出
+4. **提案生成**: 優先度付きOptimizationProposalリスト作成
+5. **実行ガイド**: 各提案の詳細手順書・チェックリスト・リスク評価
+6. **統合レポート**: 全提案を含む包括的分析レポート
+
+**1回のツール呼び出しで完了**: 従来の複数ステップを統合した効率的なワークフロー
 
 #### Step 4: 結果確認と検証
 ```bash
@@ -301,21 +339,30 @@ analyze-and-propose-optimizations
 **出力される成果物:**
 ```
 snapshots/ProductSales/
-├── 00_Baseline/
+├── 00_Baseline/                  # ベースライン分析結果
 │   ├── view_definition.sql
 │   ├── execution_plan.xml
 │   ├── performance_metrics.json
 │   └── result_checksum.txt
-├── 01_UpdateStatistics_Orders/
-│   ├── proposed_sql.sql          # 生成された最適化SQL（実行はしない）
-│   ├── execution_guide.md        # 実行手順書
-│   ├── risk_assessment.json      # リスク評価
-│   └── expected_improvement.json # 改善予測
-├── 02_RemoveUnnecessaryDistinct_ProductQuery/
+├── 01_UpdateStatistics_Orders/   # 優先度1の提案
+│   ├── proposed_sql.sql          # 生成されたSQL（実行は人間判断）
+│   ├── execution_guide.md        # 詳細実行手順書
+│   ├── risk_assessment.json      # リスク評価・対策
+│   ├── expected_improvement.json # 改善予測（25%向上）
+│   ├── pre_execution_checklist.md # 実行前確認事項
+│   └── recovery_procedure.md     # 回復手順
+├── 02_FixImplicitConversion_CustomerID/ # 優先度2の提案
+│   ├── proposed_sql.sql
+│   ├── execution_guide.md        # ステップ別手順
+│   ├── data_type_analysis.json   # 型変換分析
+│   └── validation_checklist.md   # 実行後検証手順
+├── 03_RemoveUnnecessaryDistinct_ProductQuery/ # 優先度3の提案
 │   ├── proposed_sql.sql
 │   ├── before_after_comparison.sql
-│   └── validation_checklist.md
-└── final_report.md               # 全提案を含む包括レポート
+│   ├── duplicate_analysis.json   # 重複分析結果
+│   └── execution_guide.md
+├── analysis_session.json         # セッション全体の記録
+└── final_report.md              # 統合分析レポート
 ```
 
 ### トラブルシューティング
@@ -340,11 +387,14 @@ snapshots/ProductSales/
 - ✅ パフォーマンス改善予測の算出
 - ✅ 提案SQL文の構文チェック
 
-#### 人間による必須確認事項
-- 🔍 **すべての提案SQL文の内容レビュー**
-- 🔍 **テスト環境での事前検証**
-- 🔍 **本番環境でのバックアップ取得**
-- 🔍 **段階的実行（一度に1つずつ）**
+#### 人間による必須確認事項（新設計強化）
+- 🔍 **提案SQL文の完全レビュー**: 生成されたALTER文の論理的正確性確認
+- 🔍 **実行手順書の確認**: 自動生成された手順書の妥当性チェック
+- 🔍 **リスク評価の検討**: 各提案のリスクレベルと対策の適切性判断
+- 🔍 **テスト環境での事前検証**: 生成SQL文の動作確認
+- 🔍 **本番環境での段階的実行**: 優先度順に1つずつ適用
+- 🔍 **実行後検証**: パフォーマンス改善効果と副作用の確認
+- 🔍 **回復手順の理解**: 問題発生時の復旧方法の把握
 
 ## 開発依存関係
 
