@@ -9,11 +9,11 @@ namespace DbPerformanceMcpServer.Services;
 public interface IOptimizationOrchestrator
 {
     /// <summary>
-    /// ビューの完全自動最適化を実行（フェーズ1-3）
+    /// ビューの包括的分析と最適化提案生成（実行はしない）
     /// </summary>
-    Task<OptimizationSession> OptimizeViewFullyAsync(
+    Task<AnalysisSession> AnalyzeAndProposeOptimizationsAsync(
         string viewIdentifier, 
-        int? maxSteps = null, 
+        int? maxProposals = null, 
         string? snapshotBasePath = null, 
         CancellationToken cancellationToken = default);
 

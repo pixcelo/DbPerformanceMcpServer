@@ -28,37 +28,53 @@ public class OptimizationService : IOptimizationService
         _logger = logger;
     }
 
-    public Task<OptimizationSnapshot> ExecuteOptimizationStepAsync(string viewName, OptimizationActionType actionType, string? targetObject = null, string? snapshotBasePath = null, CancellationToken cancellationToken = default)
+    public async Task<OptimizationProposal> GenerateOptimizationProposalAsync(string viewName, OptimizationActionType actionType, string? targetObject = null, string? snapshotBasePath = null, CancellationToken cancellationToken = default)
     {
-        // 骨格実装：動作確認用ダミーデータ
-        var snapshot = new OptimizationSnapshot
+        try
         {
-            SnapshotId = "01_DummyAction",
-            ActionName = $"{actionType}_Dummy",
-            ActionSql = $"-- ダミー実装: {actionType} 実行SQL",
-            ValidationResult = new ValidationResult
+            _logger.LogDebug("Generating optimization proposal for {ActionType} on {ViewName}", actionType, viewName);
+
+            // 元のビュー定義を取得
+            var originalViewDefinition = await _sqlConnection.GetViewDefinitionAsync(viewName, cancellationToken);
+
+            // 最適化SQL生成（実行はしない）
+            var proposedSql = await GenerateOptimizationSqlAsync(actionType, viewName, targetObject);
+
+            // 提案生成
+            var proposal = new OptimizationProposal
             {
-                IsValid = true,
-                BaselineChecksum = "dummy_baseline",
-                CurrentChecksum = "dummy_baseline", // 同じにして検証成功とする
-                ValidationTimestamp = DateTime.UtcNow
-            },
-            PerformanceMetrics = new PerformanceMetrics
-            {
-                ExecutionTimeMs = 800, // ベースラインより改善
-                LogicalReads = 300,
-                ImprovementPercentage = 20.0,
-                Timestamp = DateTime.UtcNow
-            },
-            Status = OptimizationStatus.Success,
-            StartTime = DateTime.UtcNow.AddMinutes(-1),
-            EndTime = DateTime.UtcNow,
-            BaselineExecutionTimeMs = 1000,
-            ImprovedExecutionTimeMs = 800,
-            ImprovementPercentage = 20.0
-        };
-        
-        return Task.FromResult(snapshot);
+                ActionType = actionType,
+                TargetObject = targetObject,
+                ProposedSql = proposedSql,
+                OriginalViewDefinition = originalViewDefinition,
+                Description = GetActionDescription(actionType),
+                Priority = GetActionPriority(actionType),
+                ExpectedImprovement = new ExpectedImprovement
+                {
+                    ExpectedExecutionTimeImprovementPercent = GetExpectedImprovement(actionType),
+                    ImpactLevel = GetImpactLevel(actionType),
+                    ImprovementReason = GetImprovementReason(actionType)
+                },
+                RiskAssessment = new RiskAssessment
+                {
+                    RiskLevel = GetRiskLevel(actionType),
+                    PotentialRisks = GetPotentialRisks(actionType),
+                    RecoveryProcedure = $"元のビュー定義に戻すには: {originalViewDefinition}",
+                    Prerequisites = GetPrerequisites(actionType)
+                }
+            };
+
+            // 実行手順書生成
+            proposal.ExecutionGuide = await GenerateExecutionGuideAsync(actionType, viewName, proposedSql, cancellationToken);
+
+            _logger.LogInformation("Generated optimization proposal: {ActionType} for {ViewName}", actionType, viewName);
+            return proposal;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate optimization proposal for {ActionType} on {ViewName}", actionType, viewName);
+            throw;
+        }
     }
 
     public Task<ValidationResult> ValidateResultIntegrityAsync(string viewName, string baselineChecksum, CancellationToken cancellationToken = default)
@@ -127,10 +143,45 @@ public class OptimizationService : IOptimizationService
         }
     }
 
-    public Task RollbackOptimizationStepAsync(string viewName, OptimizationActionType actionType, string? originalDefinition = null, CancellationToken cancellationToken = default)
+    public async Task<ExecutionGuide> GenerateExecutionGuideAsync(OptimizationActionType actionType, string viewName, string proposedSql, CancellationToken cancellationToken = default)
     {
-        // TODO: 実装
-        throw new NotImplementedException();
+        await Task.CompletedTask;
+        
+        var guide = new ExecutionGuide
+        {
+            PreExecutionChecklist = GetPreExecutionChecklist(actionType),
+            ExecutionSteps = new List<ExecutionStep>
+            {
+                new ExecutionStep
+                {
+                    StepNumber = 1,
+                    Description = "元のビュー定義をバックアップ",
+                    SqlCommand = $"-- バックアップ用SQL\nSELECT OBJECT_DEFINITION(OBJECT_ID('{viewName}')) AS OriginalDefinition",
+                    ExpectedResult = "現在のビュー定義が取得される",
+                    Notes = "必ずバックアップを保存してください"
+                },
+                new ExecutionStep
+                {
+                    StepNumber = 2,
+                    Description = $"{GetActionDescription(actionType)}を実行",
+                    SqlCommand = proposedSql,
+                    ExpectedResult = "ビューが正常に更新される",
+                    Notes = "実行前にテスト環境で確認してください"
+                },
+                new ExecutionStep
+                {
+                    StepNumber = 3,
+                    Description = "結果セット検証",
+                    SqlCommand = $"SELECT TOP 10 * FROM {viewName}",
+                    ExpectedResult = "期待される結果が返される",
+                    Notes = "データの整合性を確認"
+                }
+            },
+            PostExecutionValidation = GetPostExecutionValidation(actionType),
+            EstimatedExecutionTime = TimeSpan.FromMinutes(GetEstimatedMinutes(actionType))
+        };
+
+        return guide;
     }
 
     public Task<string> GenerateFinalReportAsync(string viewName, string snapshotBasePath, CancellationToken cancellationToken = default)
@@ -319,6 +370,219 @@ public class OptimizationService : IOptimizationService
     }
 
     // SQL最適化のヘルパーメソッド群
+
+    #region Helper Methods for Proposal Generation
+
+    private string GetActionDescription(OptimizationActionType actionType)
+    {
+        return actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => "統計情報の更新（FULLSCANで正確性向上）",
+            OptimizationActionType.RemoveUnnecessaryDistinct => "不要なDISTINCT句の除去",
+            OptimizationActionType.ConvertSubqueryToJoin => "サブクエリをJOINに変換してパフォーマンス改善",
+            OptimizationActionType.FixImplicitConversion => "暗黙的データ型変換の明示化",
+            OptimizationActionType.OptimizeStringConcatenation => "文字列連結の最適化（CONCAT関数使用）",
+            OptimizationActionType.PrecomputeCalculatedColumns => "計算列の事前計算（制約により限定的）",
+            OptimizationActionType.RemoveUnnecessarySort => "不要なORDER BY句の除去",
+            OptimizationActionType.OptimizeStringOperations => "文字列操作の最適化（LTRIM/RTRIM使用）",
+            OptimizationActionType.OptimizeTableScans => "テーブルスキャンの最適化（WHERE句改善）",
+            _ => $"不明なアクション: {actionType}"
+        };
+    }
+
+    private int GetActionPriority(OptimizationActionType actionType)
+    {
+        return actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => 1,
+            OptimizationActionType.FixImplicitConversion => 2,
+            OptimizationActionType.ConvertSubqueryToJoin => 3,
+            OptimizationActionType.OptimizeTableScans => 4,
+            OptimizationActionType.RemoveUnnecessaryDistinct => 5,
+            OptimizationActionType.OptimizeStringConcatenation => 6,
+            OptimizationActionType.OptimizeStringOperations => 7,
+            OptimizationActionType.RemoveUnnecessarySort => 8,
+            OptimizationActionType.PrecomputeCalculatedColumns => 9,
+            _ => 10
+        };
+    }
+
+    private double GetExpectedImprovement(OptimizationActionType actionType)
+    {
+        return actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => 25.0,
+            OptimizationActionType.FixImplicitConversion => 30.0,
+            OptimizationActionType.ConvertSubqueryToJoin => 40.0,
+            OptimizationActionType.OptimizeTableScans => 35.0,
+            OptimizationActionType.RemoveUnnecessaryDistinct => 15.0,
+            OptimizationActionType.OptimizeStringConcatenation => 10.0,
+            OptimizationActionType.OptimizeStringOperations => 12.0,
+            OptimizationActionType.RemoveUnnecessarySort => 5.0,
+            OptimizationActionType.PrecomputeCalculatedColumns => 20.0,
+            _ => 0.0
+        };
+    }
+
+    private string GetImpactLevel(OptimizationActionType actionType)
+    {
+        return actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => "中",
+            OptimizationActionType.FixImplicitConversion => "高",
+            OptimizationActionType.ConvertSubqueryToJoin => "高",
+            OptimizationActionType.OptimizeTableScans => "高",
+            OptimizationActionType.RemoveUnnecessaryDistinct => "中",
+            OptimizationActionType.OptimizeStringConcatenation => "低",
+            OptimizationActionType.OptimizeStringOperations => "低",
+            OptimizationActionType.RemoveUnnecessarySort => "低",
+            OptimizationActionType.PrecomputeCalculatedColumns => "中",
+            _ => "不明"
+        };
+    }
+
+    private string GetImprovementReason(OptimizationActionType actionType)
+    {
+        return actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => "最新の統計情報により、クエリオプティマイザがより良い実行プランを選択",
+            OptimizationActionType.FixImplicitConversion => "データ型変換のオーバーヘッドを削減し、インデックス使用効率を向上",
+            OptimizationActionType.ConvertSubqueryToJoin => "サブクエリの反復実行を回避し、単一パスでの処理に変換",
+            OptimizationActionType.OptimizeTableScans => "効率的なWHERE句により、処理対象レコード数を大幅削減",
+            OptimizationActionType.RemoveUnnecessaryDistinct => "重複排除処理のオーバーヘッドを削減",
+            OptimizationActionType.OptimizeStringConcatenation => "CONCAT関数使用により、NULL処理とメモリ効率を改善",
+            OptimizationActionType.OptimizeStringOperations => "最適化された関数使用により、処理効率向上",
+            OptimizationActionType.RemoveUnnecessarySort => "不要なソート処理を削除してCPU使用量を削減",
+            OptimizationActionType.PrecomputeCalculatedColumns => "複雑な計算の事前実行により、クエリ実行時の処理負荷を軽減",
+            _ => "不明な改善理由"
+        };
+    }
+
+    private string GetRiskLevel(OptimizationActionType actionType)
+    {
+        return actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => "低",
+            OptimizationActionType.RemoveUnnecessaryDistinct => "低",
+            OptimizationActionType.RemoveUnnecessarySort => "低",
+            OptimizationActionType.OptimizeStringConcatenation => "低",
+            OptimizationActionType.OptimizeStringOperations => "低",
+            OptimizationActionType.FixImplicitConversion => "中",
+            OptimizationActionType.OptimizeTableScans => "中",
+            OptimizationActionType.ConvertSubqueryToJoin => "中",
+            OptimizationActionType.PrecomputeCalculatedColumns => "高",
+            _ => "不明"
+        };
+    }
+
+    private List<string> GetPotentialRisks(OptimizationActionType actionType)
+    {
+        return actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => new List<string>
+            {
+                "統計更新中のテーブルロック",
+                "更新処理による一時的なパフォーマンス低下"
+            },
+            OptimizationActionType.FixImplicitConversion => new List<string>
+            {
+                "データ型変更による既存アプリケーションへの影響",
+                "予期しないデータ変換エラーの可能性"
+            },
+            OptimizationActionType.ConvertSubqueryToJoin => new List<string>
+            {
+                "結果セットの変化（カーディナリティ変更）",
+                "JOIN条件の複雑化によるメンテナンス性低下"
+            },
+            OptimizationActionType.PrecomputeCalculatedColumns => new List<string>
+            {
+                "複雑な変更によるビューの可読性低下",
+                "CTEや一時テーブル使用による制約違反の可能性"
+            },
+            _ => new List<string> { "一般的な最適化リスク" }
+        };
+    }
+
+    private List<string> GetPrerequisites(OptimizationActionType actionType)
+    {
+        return actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => new List<string>
+            {
+                "統計更新権限の確認",
+                "メンテナンスウィンドウでの実行推奨"
+            },
+            OptimizationActionType.FixImplicitConversion => new List<string>
+            {
+                "影響範囲の事前調査",
+                "データ型互換性の確認"
+            },
+            OptimizationActionType.ConvertSubqueryToJoin => new List<string>
+            {
+                "結果セットの事前比較",
+                "パフォーマンステストの実施"
+            },
+            _ => new List<string> { "テスト環境での事前検証" }
+        };
+    }
+
+    private List<string> GetPreExecutionChecklist(OptimizationActionType actionType)
+    {
+        var commonChecks = new List<string>
+        {
+            "テスト環境での事前検証完了",
+            "本番データベースのバックアップ取得",
+            "影響範囲の関係者への通知"
+        };
+
+        var specificChecks = actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => new List<string>
+            {
+                "統計更新権限の確認",
+                "システム負荷の低い時間帯での実行"
+            },
+            OptimizationActionType.FixImplicitConversion => new List<string>
+            {
+                "データ型変更の影響調査",
+                "アプリケーションコードでの型チェック"
+            },
+            _ => new List<string>()
+        };
+
+        commonChecks.AddRange(specificChecks);
+        return commonChecks;
+    }
+
+    private List<string> GetPostExecutionValidation(OptimizationActionType actionType)
+    {
+        return new List<string>
+        {
+            "結果セットの同一性確認",
+            "パフォーマンス改善効果の測定",
+            "エラーログの確認",
+            "関連アプリケーションの動作確認"
+        };
+    }
+
+    private int GetEstimatedMinutes(OptimizationActionType actionType)
+    {
+        return actionType switch
+        {
+            OptimizationActionType.UpdateStatistics => 10,
+            OptimizationActionType.RemoveUnnecessaryDistinct => 5,
+            OptimizationActionType.RemoveUnnecessarySort => 3,
+            OptimizationActionType.OptimizeStringConcatenation => 5,
+            OptimizationActionType.OptimizeStringOperations => 5,
+            OptimizationActionType.FixImplicitConversion => 15,
+            OptimizationActionType.ConvertSubqueryToJoin => 20,
+            OptimizationActionType.OptimizeTableScans => 10,
+            OptimizationActionType.PrecomputeCalculatedColumns => 30,
+            _ => 10
+        };
+    }
+
+    #endregion
 
     private string RemoveUnnecessaryDistinct(string sqlQuery)
     {

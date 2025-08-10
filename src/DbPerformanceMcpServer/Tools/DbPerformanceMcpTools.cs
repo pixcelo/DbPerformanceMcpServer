@@ -48,8 +48,8 @@ internal class DbPerformanceMcpTools
     }
 
     [McpServerTool]
-    [Description("フェーズ2: 単一の改善アクションを実行・検証します（結果の同一性を確認してからパフォーマンスを測定）")]
-    public async Task<string> ExecuteOptimizationStep(
+    [Description("単一の最適化提案SQL生成（実行はしません。生成されたSQL文は人間がレビュー・実行してください）")]
+    public async Task<string> GenerateOptimizationProposal(
         [Description("対象ビュー名")] string viewName,
         [Description("改善アクション種別")] OptimizationActionType actionType,
         [Description("対象テーブル/カラム等のパラメータ（例: \"dbo.Orders\" または \"ProductQuery\"）")] string? targetObject = null,
@@ -57,7 +57,7 @@ internal class DbPerformanceMcpTools
     {
         try
         {
-            var result = await _optimizationService.ExecuteOptimizationStepAsync(
+            var result = await _optimizationService.GenerateOptimizationProposalAsync(
                 viewName, actionType, targetObject, snapshotBasePath);
             return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
         }
@@ -69,22 +69,23 @@ internal class DbPerformanceMcpTools
                 Message = ex.Message,
                 ViewName = viewName,
                 ActionType = actionType.ToString(),
-                TargetObject = targetObject
+                TargetObject = targetObject,
+                Note = "SQL文は生成されません。接続設定やビュー名を確認してください。"
             }, new JsonSerializerOptions { WriteIndented = true });
         }
     }
 
     [McpServerTool]
-    [Description("フェーズ1-3の完全自動実行: ベースライン分析から段階的改善、最終レポート生成まで自動実行")]
-    public async Task<string> OptimizeViewFully(
+    [Description("包括的分析と全最適化提案の生成（実行はしません。すべての提案SQL文が生成されます）")]
+    public async Task<string> AnalyzeAndProposeOptimizations(
         [Description("ビュー名またはファイルパス")] string viewIdentifier,
-        [Description("最大改善ステップ数 (デフォルト: 10)")] int? maxSteps = null,
+        [Description("最大提案数 (デフォルト: 10)")] int? maxProposals = null,
         [Description("スナップショットベースパス")] string? snapshotBasePath = null)
     {
         try
         {
-            var result = await _optimizationOrchestrator.OptimizeViewFullyAsync(
-                viewIdentifier, maxSteps, snapshotBasePath);
+            var result = await _optimizationOrchestrator.AnalyzeAndProposeOptimizationsAsync(
+                viewIdentifier, maxProposals, snapshotBasePath);
             return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
         }
         catch (Exception ex)
@@ -93,13 +94,14 @@ internal class DbPerformanceMcpTools
             {
                 Error = true,
                 Message = ex.Message,
-                ViewIdentifier = viewIdentifier
+                ViewIdentifier = viewIdentifier,
+                Note = "提案SQL文は生成されません。分析専用モードでエラーが発生しました。"
             }, new JsonSerializerOptions { WriteIndented = true });
         }
     }
 
     [McpServerTool]
-    [Description("フェーズ3: 最適化セッションの最終レポートを生成します")]
+    [Description("分析セッションの最終レポートと実行可能SQL文一覧を生成します")]
     public async Task<string> GenerateFinalReport(
         [Description("対象ビュー名")] string viewName,
         [Description("スナップショットベースパス")] string snapshotBasePath)

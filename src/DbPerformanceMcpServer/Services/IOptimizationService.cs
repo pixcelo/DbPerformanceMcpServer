@@ -10,9 +10,9 @@ namespace DbPerformanceMcpServer.Services;
 public interface IOptimizationService
 {
     /// <summary>
-    /// 単一の最適化ステップを実行（フェーズ2）
+    /// 単一の最適化提案を生成（実行はしない）
     /// </summary>
-    Task<OptimizationSnapshot> ExecuteOptimizationStepAsync(
+    Task<OptimizationProposal> GenerateOptimizationProposalAsync(
         string viewName, 
         OptimizationActionType actionType, 
         string? targetObject = null, 
@@ -35,14 +35,14 @@ public interface IOptimizationService
     Task<string> CalculateResultChecksumAsync(string viewName, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 最適化アクションのSQLを生成
+    /// 最適化アクションのSQLを生成（実行はしない）
     /// </summary>
     Task<string> GenerateOptimizationSqlAsync(OptimizationActionType actionType, string viewName, string? targetObject = null);
 
     /// <summary>
-    /// 最適化ステップをロールバック
+    /// 実行手順書とリスク評価を生成
     /// </summary>
-    Task RollbackOptimizationStepAsync(string viewName, OptimizationActionType actionType, string? originalDefinition = null, CancellationToken cancellationToken = default);
+    Task<ExecutionGuide> GenerateExecutionGuideAsync(OptimizationActionType actionType, string viewName, string proposedSql, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 最終レポートを生成（フェーズ3）
