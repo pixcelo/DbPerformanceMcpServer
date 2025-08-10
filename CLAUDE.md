@@ -30,15 +30,43 @@ dotnet run --project src/DbPerformanceMcpServer
 ./DbPerformanceMcpServer.exe
 ```
 
-### データベース接続のテスト
-MCPツールを使用する前に、`appsettings.json`の接続文字列が正しいことを確認してください：
+### SQL Server接続設定
+MCPツールを使用する前に、`appsettings.json`でSQL Server接続文字列を設定してください：
+
+#### Windows認証の場合（推奨）
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Database=PMS;Integrated Security=true;TrustServerCertificate=true;"
+    "DefaultConnection": "Server=localhost;Database=PerformanceTestDB;Integrated Security=true;TrustServerCertificate=true;"
   }
 }
 ```
+
+#### SQL Server認証の場合
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Database=PerformanceTestDB;User Id=sa;Password=YourPassword123;TrustServerCertificate=true;"
+  }
+}
+```
+
+#### リモートSQL Serverの場合
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=sql-server.company.com,1433;Database=ProductionDB;User Id=dboptimizer;Password=SecurePass123;Encrypt=true;TrustServerCertificate=false;"
+  }
+}
+```
+
+**接続文字列のパラメータ説明:**
+- `Server`: SQL Serverインスタンス名（ポート指定可能）
+- `Database`: 対象データベース名
+- `Integrated Security=true`: Windows認証を使用
+- `User Id/Password`: SQL Server認証の場合
+- `TrustServerCertificate=true`: 開発環境用（本番では false を推奨）
+- `Encrypt=true`: 通信の暗号化（本番環境推奨）
 
 ## アーキテクチャ
 
@@ -148,6 +176,156 @@ performance_snapshots/{viewName}/
 ├── 01_{ActionType}_{Target}/  # 各最適化ステップ
 └── final_report.md           # 包括的な結果レポート
 ```
+
+## MCPツールの使い方
+
+### 前提条件
+1. SQL Serverが起動し、対象データベースにアクセス可能
+2. `appsettings.json`の接続文字列が設定済み
+3. MCPサーバーが実行中（`dotnet run`または実行ファイル）
+
+### 基本的なワークフロー
+
+#### Step 1: ベースライン分析
+```bash
+# MCPクライアントから実行
+analyze-view-baseline 
+  viewIdentifier: "dbo.V_SlowSalesReport"
+  snapshotBasePath: "./performance_snapshots/"
+```
+
+**取得される情報:**
+- ビュー定義SQL
+- 実行プラン（XML）
+- 現在のパフォーマンス指標（実行時間、IO統計）
+- 結果セットSHA2_256チェックサム
+- 自動生成された最適化提案リスト
+
+#### Step 2: 個別最適化実行
+```bash
+# 統計情報を更新
+execute-optimization-step
+  viewName: "dbo.V_SlowSalesReport"
+  actionType: "UpdateStatistics"
+  targetObject: "dbo.Orders"
+  snapshotBasePath: "./performance_snapshots/"
+
+# 不要なDISTINCTを削除
+execute-optimization-step
+  viewName: "dbo.V_SlowSalesReport" 
+  actionType: "RemoveUnnecessaryDistinct"
+  snapshotBasePath: "./performance_snapshots/"
+```
+
+**各ステップで実行される処理:**
+1. 最適化SQL自動生成
+2. 元のビュー定義バックアップ
+3. 最適化実行
+4. 結果セット同一性検証（SHA2_256）
+5. パフォーマンス改善測定
+6. 失敗時の自動ロールバック
+
+#### Step 3: 完全自動最適化（推奨）
+```bash
+# フェーズ1-3を自動実行
+optimize-view-fully
+  viewIdentifier: "dbo.V_SlowSalesReport"
+  maxSteps: 10
+  snapshotBasePath: "./performance_snapshots/"
+```
+
+**自動実行される内容:**
+1. ベースライン分析
+2. 最適化提案の優先度順実行
+3. 各ステップでの整合性検証
+4. 改善効果測定と継続判定
+5. 最終レポート自動生成
+
+#### Step 4: 結果確認と検証
+```bash
+# 現在のパフォーマンス測定
+measure-view-performance
+  viewName: "dbo.V_SlowSalesReport"
+  measurementRuns: 5
+
+# データ整合性確認
+validate-view-results
+  viewName: "dbo.V_SlowSalesReport"
+  baselineChecksum: "A1B2C3D4E5F6..."
+
+# 最終レポート生成
+generate-final-report
+  viewName: "dbo.V_SlowSalesReport"
+  snapshotBasePath: "./performance_snapshots/"
+```
+
+### 実用的な使用例
+
+#### 例1: 単発の問題解決
+```bash
+# 1. 問題のあるビューを特定
+analyze-view-baseline viewIdentifier: "dbo.V_CustomerOrders"
+
+# 2. 提案された最優先アクションを実行
+execute-optimization-step 
+  viewName: "dbo.V_CustomerOrders"
+  actionType: "UpdateStatistics"
+  targetObject: "dbo.Customers"
+
+# 3. 改善効果を確認
+measure-view-performance viewName: "dbo.V_CustomerOrders"
+```
+
+#### 例2: 包括的な最適化セッション
+```bash
+# 完全自動最適化（推奨）
+optimize-view-fully
+  viewIdentifier: "dbo.V_ProductSales"
+  maxSteps: 8
+  snapshotBasePath: "./snapshots/ProductSales/"
+```
+
+**出力される成果物:**
+```
+snapshots/ProductSales/
+├── 00_Baseline/
+│   ├── view_definition.sql
+│   ├── execution_plan.xml
+│   ├── performance_metrics.json
+│   └── result_checksum.txt
+├── 01_UpdateStatistics_Orders/
+│   ├── optimization_sql.sql
+│   ├── performance_improvement.json
+│   └── validation_result.json
+├── 02_RemoveUnnecessaryDistinct_ProductQuery/
+└── final_report.md
+```
+
+### トラブルシューティング
+
+#### 最適化が失敗する場合
+1. **制約違反**: `docs/optimization-constraints.md`で許可される操作を確認
+2. **データ不整合**: SHA2_256チェックサムが一致しない場合は自動ロールバック
+3. **接続エラー**: `appsettings.json`の接続文字列を確認
+4. **権限不足**: `ALTER VIEW`権限とテーブルへの`UPDATE STATISTICS`権限が必要
+
+#### パフォーマンス改善が見られない場合
+- 最小改善率5%未満の場合、次のステップに進まない設計
+- `maxSteps`を増やして追加の最適化を試行
+- 手動で`analyze-view-baseline`を実行して新しい提案を取得
+
+### 制約と注意事項
+
+#### 自動実行される安全チェック
+- ✅ 実行前の制約バリデーション
+- ✅ 結果セット同一性の厳密検証
+- ✅ パフォーマンス改善の定量測定
+- ✅ 失敗時の完全自動復旧
+
+#### 手動確認が推奨される場面
+- 本番環境での初回実行
+- 複雑なビューでの`ConvertSubqueryToJoin`
+- 大量データを扱うビューでの統計更新
 
 ## 開発依存関係
 
